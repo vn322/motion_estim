@@ -1,0 +1,7 @@
+project/
+├── main.py          # GUI
+├── pose_analyzer.py # Анализ позы
+├── utils.py         # Расчёты
+├── report_generator.py # Сохранение видео и CSV
+├── icon.ico         # Иконка (добавьте вашу)
+└── build.bat        # Сборка с иконкой
