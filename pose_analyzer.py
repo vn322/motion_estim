@@ -29,6 +29,7 @@ class PoseAnalyzer:
         self.frame_data_log = []
 
     def process_frame(self, frame):
+        # Применяем трансформации кадра
         if self.flip_camera:
             frame = cv2.flip(frame, 1)
         if self.rotate_180:
@@ -39,10 +40,13 @@ class PoseAnalyzer:
         h, w = frame.shape[:2]
         data = {"frame_number": self.frame_count}
 
+        # Если ключевые точки не найдены
         if not results.pose_landmarks:
             self.frame_count += 1
             self.frame_data_log.append(data)
             self._put_text(frame, f"{self.frame_count}", (10, 30))
+            # Подпись в левом нижнем углу
+            self._put_text(frame, "Ermakov.AV, 2025", (10, h - 20), (255, 255, 255))
             return frame, data
 
         annotated = frame.copy()
@@ -55,7 +59,7 @@ class PoseAnalyzer:
             lm = landmarks[idx]
             return (int(lm.x * w), int(lm.y * h))
 
-        # --- 4 сустава + X-Factor ---
+        # --- 4 сустава: shoulder, elbow, hip, knee ---
         for side in ['left', 'right']:
             prefix = 'LEFT' if side == 'left' else 'RIGHT'
             color = (0, 255, 0) if side == 'left' else (0, 255, 255)  # зелёный / голубой
@@ -67,7 +71,7 @@ class PoseAnalyzer:
                 hip = get_coords(getattr(self.mp_pose.PoseLandmark, f'{prefix}_HIP').value)
                 angle = calculate_angle(elbow, shoulder, hip)
                 data[f'shoulder_{side}_angle'] = angle
-                self._put_text(annotated, f"{int(angle)}", (shoulder[0]+10, shoulder[1]-10), color)
+                self._put_text(annotated, f"{int(angle)}", (shoulder[0] + 10, shoulder[1] - 10), color)
             except: pass
 
             # Elbow
@@ -77,7 +81,7 @@ class PoseAnalyzer:
                 wrist = get_coords(getattr(self.mp_pose.PoseLandmark, f'{prefix}_WRIST').value)
                 angle = calculate_angle(shoulder, elbow, wrist)
                 data[f'elbow_{side}_angle'] = angle
-                self._put_text(annotated, f"{int(angle)}", (elbow[0]+10, elbow[1]-10), color)
+                self._put_text(annotated, f"{int(angle)}", (elbow[0] + 10, elbow[1] - 10), color)
             except: pass
 
             # Hip
@@ -87,7 +91,7 @@ class PoseAnalyzer:
                 knee = get_coords(getattr(self.mp_pose.PoseLandmark, f'{prefix}_KNEE').value)
                 angle = calculate_angle(shoulder, hip, knee)
                 data[f'hip_{side}_angle'] = angle
-                self._put_text(annotated, f"{int(angle)}", (hip[0]+10, hip[1]-10), color)
+                self._put_text(annotated, f"{int(angle)}", (hip[0] + 10, hip[1] - 10), color)
             except: pass
 
             # Knee
@@ -97,10 +101,10 @@ class PoseAnalyzer:
                 ankle = get_coords(getattr(self.mp_pose.PoseLandmark, f'{prefix}_ANKLE').value)
                 angle = calculate_angle(hip, knee, ankle)
                 data[f'knee_{side}_angle'] = angle
-                self._put_text(annotated, f"{int(angle)}", (knee[0]+10, knee[1]-10), color)
+                self._put_text(annotated, f"{int(angle)}", (knee[0] + 10, knee[1] - 10), color)
             except: pass
 
-        # --- X-Factor ---
+        # --- X-Factor: угол между линиями плеч и бёдер ---
         try:
             l_sh = get_coords(self.mp_pose.PoseLandmark.LEFT_SHOULDER.value)
             r_sh = get_coords(self.mp_pose.PoseLandmark.RIGHT_SHOULDER.value)
@@ -112,15 +116,17 @@ class PoseAnalyzer:
             dot = np.dot(sh_vec, hip_vec)
             norm_s = np.linalg.norm(sh_vec)
             norm_h = np.linalg.norm(hip_vec)
-            x_factor = abs(math.degrees(math.acos(np.clip(dot / (norm_s * norm_h), -1, 1)))) if norm_s > 0 and norm_h > 0 else 0.0
+            x_factor = abs(math.degrees(math.acos(np.clip(dot / (norm_s * norm_h), -1.0, 1.0)))) if norm_s > 0 and norm_h > 0 else 0.0
             data["x_factor_angle"] = x_factor
 
             cx = int((l_sh[0] + r_sh[0] + l_h[0] + r_h[0]) // 4)
             cy = int((l_sh[1] + r_sh[1] + l_h[1] + r_h[1]) // 4)
             self._put_text(annotated, f"X:{int(x_factor)}", (cx - 15, cy), (255, 255, 255))
-        except: data["x_factor_angle"] = 0.0
 
-        # --- Скорости и энтропия ---
+        except Exception as e:
+            data["x_factor_angle"] = 0.0
+
+        # --- Скорости, ускорения, энтропии ---
         curr_time = time.time()
         dt = curr_time - self.prev_time
         for key in list(data.keys()):
@@ -144,16 +150,25 @@ class PoseAnalyzer:
 
         self.prev_time = curr_time
         self.frame_count += 1
+
+        # Номер кадра в левом верхнем углу
         self._put_text(annotated, f"{self.frame_count}", (10, 30))
+        # Подпись автора в левом нижнем углу — ✅ добавлена
+        self._put_text(annotated, "Ermakov.AV, 2025", (10, h - 20), (255, 255, 255))
+
         self.frame_data_log.append(data)
         return annotated, data
 
     def _put_text(self, img, text, pos, color=(255, 255, 255)):
+        """Отрисовка текста без PIL — только cv2"""
         x, y = pos
-        cv2.putText(img, text, (x+1, y+1), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
-        cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1)
+        # Тень для контраста
+        cv2.putText(img, text, (x + 1, y + 1), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2, cv2.LINE_AA)
+        # Основной текст
+        cv2.putText(img, text, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 1, cv2.LINE_AA)
 
     def _draw_skeleton(self, frame, landmarks, h, w):
+        """Рисует скелет: левая — зелёная, правая — голубая"""
         connections = self.mp_pose.POSE_CONNECTIONS
         for start_idx, end_idx in connections:
             start = landmarks.landmark[start_idx]
@@ -172,5 +187,5 @@ class PoseAnalyzer:
     def get_summary_stats(self):
         return {"total_frames": len(self.frame_data_log)}
 
-    def save_peak_frames(self, frames_list, output_dir="output/peaks"):
-        pass  # опционально
+    def reset(self):
+        self.__init__()
